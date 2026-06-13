@@ -1194,19 +1194,30 @@ window.addEventListener('themechange', () => { if (_chartMode==='bar') drawCostC
 ══════════════════════════════════════════════════════════════ */
 let _docsInited = false, _activeDoc = null;
 
-function _renderDocsTree(docs) {
+function _renderDocsTree(sections) {
   const el = document.getElementById('docs-tree'); if (!el) return;
-  if (!docs || !docs.length) { el.innerHTML = '<div class="docs-welcome" style="font-size:11px">No docs configured.</div>'; return; }
-  const bySection = {};
-  for (const d of docs) (bySection[d.section || 'General'] ??= []).push(d);
-  el.innerHTML = Object.entries(bySection).map(([sec, items]) => `
+  if (!sections || !sections.length) { el.innerHTML = '<div class="docs-welcome" style="font-size:11px">No docs configured.</div>'; return; }
+  el.innerHTML = sections.map(sec => `
     <div class="docs-section">
-      <div class="docs-section-label">${esc(sec)}</div>
-      ${items.map(d => `<button class="docs-tree-item" data-doc-path="${esc(d.path||d.url||'')}" onclick="loadDoc(this,'${esc(d.path||d.url||'')}','${esc(d.label||d.name||d.path||'')}')">${esc(d.label||d.name||d.path||'')}</button>`).join('')}
+      <div class="docs-section-label">${esc(sec.label || 'General')}</div>
+      ${(sec.docs || []).map(d => `<button class="docs-tree-item" data-doc-slug="${esc(d.slug||'')}" onclick="loadDoc(this,'${esc(d.slug||'')}','${esc(d.title||d.slug||'')}')">${esc(d.title||d.slug||'')}</button>`).join('')}
     </div>`).join('');
 }
 
-async function _initDocsIfNeeded() { /* lazy load on first visit to docs page */ }
+async function _initDocsIfNeeded() {
+  if (_docsInited || !API_BASE) return;
+  _docsInited = true;
+  const el = document.getElementById('docs-tree');
+  if (el) el.innerHTML = '<div class="docs-welcome" style="font-size:11px">Loading…</div>';
+  try {
+    const res = await fetch(apiUrl('/api/docs/list'), { headers: _authHeaders() });
+    if (res.status === 401) { _handleUnauthorized(); return; }
+    const data = await res.json();
+    _renderDocsTree(data.sections || []);
+  } catch (e) {
+    if (el) el.innerHTML = `<div class="docs-welcome" style="font-size:11px;color:var(--error)">Failed to load docs</div>`;
+  }
+}
 
 async function loadDoc(btn, path, label) {
   if (!path) return;
@@ -1214,7 +1225,7 @@ async function loadDoc(btn, path, label) {
   const reader = document.getElementById('docs-reader');
   reader.innerHTML = '<div class="docs-loading">Loading…</div>';
   try {
-    const res = await fetch(apiUrl(`/api/docs/file?path=${encodeURIComponent(path)}`), { headers: _authHeaders() });
+    const res = await fetch(apiUrl(`/api/docs/file?slug=${encodeURIComponent(path)}`), { headers: _authHeaders() });
     if (!res.ok) throw new Error(res.status);
     const data = await res.json();
     reader.innerHTML = `<div class="docs-content"><h1>${esc(label)}</h1>${_markdownToHtml(data.content || '')}</div>`;
