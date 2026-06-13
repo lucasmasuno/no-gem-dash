@@ -41,7 +41,7 @@ function _handleUnauthorized() {
 let AVATARS = {}, DQ_AVATARS = {}, DQ_TYPE_MAP = {}, DQ_COLORS = {};
 let REGISTRY = [], DETAIL_DATA = {}, TASK_STATS = { recent:[], upcoming:[], byDay:{}, byType:{} };
 let ALL_BY_STATUS = {}, SOURCES = [], COSTS = {}, PRIVILEGE_MATRIX = {}, LEVEL_OVERRIDES = {};
-let FORCE_FLASH = false, INTENSITY_MODE = 'balanced';
+let FORCE_FLASH = false, INTENSITY_MODE = 'balanced', ACTIVE_PROVIDER = 'gemini';
 let PANEL_PREFS = {}, COST_BY_DAY = {}, LAST_7_KEYS = [], COST_BY_AGENT_7D = {};
 let LOCATION_PROFILE = null;
 const SCALE = 6, DS = 8;
@@ -124,6 +124,7 @@ function _applyData(d) {
   LEVEL_OVERRIDES  = d.levelOverrides  || {};
   FORCE_FLASH      = !!d.forceFlash;
   INTENSITY_MODE   = d.intensityMode   || 'balanced';
+  ACTIVE_PROVIDER  = d.activeProvider  || 'gemini';
   PANEL_PREFS      = d.panelPrefs      || {};
   COST_BY_DAY      = d.costByDay       || {};
   LAST_7_KEYS      = d.last7Keys       || [];
@@ -146,6 +147,7 @@ function _renderAll(d) {
   _renderInbox();
   _renderAnalytics();
   _renderSettings(d.channels || []);
+  _syncProviderUI();
   _renderLocationPill();
   _renderFlashList();
   _renderBadges();
@@ -166,6 +168,7 @@ function navTo(pageId) {
   document.querySelectorAll('.mob-tab[data-page]').forEach(b => b.classList.toggle('active', b.dataset.page === pageId));
   if (pageId === 'analytics') _initCharts();
   if (pageId === 'docs') _initDocsIfNeeded();
+  if (pageId === 'settings') _loadDiscordChannels();
   window.scrollTo({ top:0, behavior:'instant' });
 }
 
@@ -711,13 +714,122 @@ function _renderPrivMatrix() {
 ══════════════════════════════════════════════════════════════ */
 function _renderSettings(channels) {
   const el = document.getElementById('agent-ch-list'); if (!el) return;
+  // channels may be Discord channels (key+id shape) or LINE channels (channelId shape)
+  const opts = (channels || []).map(ch => {
+    const val = ch.key || ch.channelId || '';
+    const label = ch.key ? `${ch.key} (${ch.id || ch.channelId || ''})` : ch.channelId;
+    return `<option value="${esc(val)}">${esc(label)}</option>`;
+  }).join('');
   el.innerHTML = REGISTRY.map(reg => `<div class="agent-ch-row">
     <span class="agent-ch-name">${esc(reg.name)}</span>
     <select class="agent-ch-select" onchange="saveAgentChannel('${reg.id}',this.value)">
       <option value="">— none —</option>
-      ${(channels || []).map(ch => `<option value="${esc(ch.channelId)}">${esc(ch.key||ch.channelId)}</option>`).join('')}
+      ${opts}
     </select>
   </div>`).join('');
+}
+
+/* ═══════════════════════════════════════════════════════════
+   AI PROVIDER MANAGEMENT
+══════════════════════════════════════════════════════════════ */
+function _syncProviderUI() {
+  const sel = document.getElementById('provider-select');
+  if (sel) sel.value = ACTIVE_PROVIDER;
+}
+
+async function setActiveProvider(value) {
+  ACTIVE_PROVIDER = value;
+  await fetch(apiUrl('/api/project/provider'), {
+    method:'POST', headers:{..._authHeaders(),'Content-Type':'application/json'},
+    body: JSON.stringify({ activeProvider: value })
+  }).catch(()=>{});
+}
+
+async function saveProviderKey() {
+  const key = document.getElementById('provider-key-input')?.value.trim();
+  if (!key) { alert('Paste an API key first.'); return; }
+  const btn = document.querySelector('[onclick="saveProviderKey()"]');
+  const statusEl = document.getElementById('provider-key-status');
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  try {
+    const res = await fetch(apiUrl('/api/project/provider'), {
+      method:'POST', headers:{..._authHeaders(),'Content-Type':'application/json'},
+      body: JSON.stringify({ activeProvider: ACTIVE_PROVIDER, apiKey: key })
+    });
+    if (!res.ok) throw new Error(res.status);
+    document.getElementById('provider-key-input').value = '';
+    if (statusEl) statusEl.textContent = `✓ Key saved for ${ACTIVE_PROVIDER}. Restart Cloud Run if overriding env var.`;
+    if (btn) { btn.textContent = '✓'; setTimeout(() => { btn.textContent = 'Save'; btn.disabled = false; }, 2000); }
+  } catch (e) {
+    if (statusEl) statusEl.textContent = `Failed: ${e.message}`;
+    if (btn) { btn.textContent = 'ERR'; setTimeout(() => { btn.textContent = 'Save'; btn.disabled = false; }, 2000); }
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   DISCORD CHANNEL MANAGEMENT
+══════════════════════════════════════════════════════════════ */
+let _discordChannels = [];
+
+async function _loadDiscordChannels() {
+  if (!API_BASE) return;
+  try {
+    const res = await fetch(apiUrl('/api/channels'), { headers: _authHeaders() });
+    if (res.status === 401) { _handleUnauthorized(); return; }
+    if (!res.ok) return;
+    const data = await res.json();
+    _discordChannels = Object.entries(data.channels || {}).map(([key, ch]) => ({ key, ...ch }));
+    _renderDiscordChannelsList(_discordChannels);
+    _renderSettings(_discordChannels); // refresh agent assignment dropdowns with live channel list
+  } catch {}
+}
+
+function _renderDiscordChannelsList(channels) {
+  const el = document.getElementById('discord-channels-list'); if (!el) return;
+  if (!channels || !channels.length) {
+    el.innerHTML = '<div style="font-size:11px;color:var(--m)">No Discord channels configured.</div>';
+    return;
+  }
+  el.innerHTML = channels.map(ch => `
+    <div class="src-row" data-ch-key="${esc(ch.key)}">
+      <div class="src-body">
+        <div class="src-name">${esc(ch.key)}</div>
+        <div class="src-meta">
+          <span style="color:var(--m)">${esc(ch.id || ch.channelId || '')}</span>
+          <span style="color:${ch.asThread?'#7289DA':'var(--m2)'}">${ch.asThread ? 'thread' : 'post'}</span>
+          ${ch.threadName ? `<span style="font-size:9px;color:var(--m)">${esc(ch.threadName)}</span>` : ''}
+        </div>
+      </div>
+      <button class="act-btn cancel" onclick="removeDiscordChannel('${esc(ch.key)}')" style="font-size:8px;padding:2px 8px">✕</button>
+    </div>`).join('');
+}
+
+async function addDiscordChannel() {
+  const key = document.getElementById('new-ch-key')?.value.trim();
+  const id  = document.getElementById('new-ch-id')?.value.trim();
+  const asThread  = document.getElementById('new-ch-thread')?.checked || false;
+  const threadName = document.getElementById('new-ch-threadname')?.value.trim() || undefined;
+  if (!key || !id) { alert('Key and Channel ID are required.'); return; }
+  const res = await fetch(apiUrl('/api/channels'), {
+    method:'POST', headers:{..._authHeaders(),'Content-Type':'application/json'},
+    body: JSON.stringify({ key, id, asThread, ...(threadName ? { threadName } : {}) })
+  });
+  if (res.ok) {
+    ['new-ch-key','new-ch-id','new-ch-threadname'].forEach(eId => { const e = document.getElementById(eId); if (e) e.value = ''; });
+    const cb = document.getElementById('new-ch-thread'); if (cb) cb.checked = false;
+    _loadDiscordChannels();
+  } else alert('Failed: ' + res.status);
+}
+
+async function removeDiscordChannel(key) {
+  if (!confirm(`Remove channel "${key}"?`)) return;
+  const row = document.querySelector(`[data-ch-key="${CSS.escape(key)}"]`);
+  if (row) row.style.opacity = '0.3';
+  const res = await fetch(apiUrl(`/api/channels/${encodeURIComponent(key)}`), {
+    method:'DELETE', headers:_authHeaders()
+  });
+  if (res.ok) _loadDiscordChannels();
+  else { if (row) row.style.opacity = ''; alert('Failed: ' + res.status); }
 }
 
 async function resetDashLayout() {
@@ -726,10 +838,10 @@ async function resetDashLayout() {
   loadDashboard();
 }
 
-async function saveAgentChannel(agentId, channelId) {
-  await fetch(apiUrl(`/api/agents/${agentId}/settings`), {
+async function saveAgentChannel(agentId, channelKey) {
+  await fetch(apiUrl('/api/agent-channel'), {
     method:'POST', headers:{..._authHeaders(),'Content-Type':'application/json'},
-    body: JSON.stringify({ channelId: channelId || null })
+    body: JSON.stringify({ agentId, channelKey: channelKey || '' })
   }).catch(()=>{});
 }
 
@@ -1229,24 +1341,107 @@ async function loadDoc(btn, path, label) {
     if (!res.ok) throw new Error(res.status);
     const data = await res.json();
     reader.innerHTML = `<div class="docs-content"><h1>${esc(label)}</h1>${_markdownToHtml(data.content || '')}</div>`;
+    if (window.mermaid) {
+      const nodes = reader.querySelectorAll('.mermaid');
+      if (nodes.length) mermaid.run({ nodes }).catch(() => {});
+    }
   } catch (e) {
     reader.innerHTML = `<div class="docs-welcome" style="color:var(--error)">Failed to load: ${esc(e.message)}</div>`;
   }
 }
 
 function _markdownToHtml(md) {
-  return md
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-    .replace(/^### (.+)$/gm,'<h3>$1</h3>')
-    .replace(/^## (.+)$/gm,'<h2>$1</h2>')
-    .replace(/^# (.+)$/gm,'<h1>$1</h1>')
-    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
-    .replace(/`([^`]+)`/g,'<code>$1</code>')
-    .replace(/^> (.+)$/gm,'<blockquote>$1</blockquote>')
-    .replace(/^- (.+)$/gm,'<li>$1</li>')
-    .replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>')
-    .replace(/\n\n/g,'</p><p>')
-    .replace(/^(?!<[a-z])(.+)$/gm,'<p>$1</p>');
+  // Extract fenced code/mermaid blocks before any escaping
+  const blocks = [];
+  md = md.replace(/```(\w*)\r?\n([\s\S]*?)```/g, (_, lang, code) => {
+    const idx = blocks.length;
+    const safe = code.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n$/,'');
+    if (lang === 'mermaid') {
+      blocks.push(`<div class="mermaid">${safe}</div>`);
+    } else {
+      const cls = lang ? ` class="language-${lang}"` : '';
+      blocks.push(`<pre><code${cls}>${safe}</code></pre>`);
+    }
+    return `\x00BLK${idx}\x00`;
+  });
+
+  // HTML-escape remaining text
+  md = md.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+  const out = [], lines = md.split('\n');
+  let inUl = false, inOl = false, inPara = false;
+  const flush = () => {
+    if (inUl)  { out.push('</ul>');  inUl  = false; }
+    if (inOl)  { out.push('</ol>');  inOl  = false; }
+    if (inPara){ out.push('</p>');   inPara = false; }
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^\x00BLK\d+\x00$/.test(line.trim())) { flush(); out.push(line.trim()); continue; }
+    if (!line.trim()) { flush(); continue; }
+
+    // Headings
+    const hm = line.match(/^(#{1,3}) (.+)$/);
+    if (hm) { flush(); out.push(`<h${hm[1].length}>${_inline(hm[2])}</h${hm[1].length}>`); continue; }
+
+    // Blockquote
+    const bq = line.match(/^&gt; (.+)$/);
+    if (bq) { flush(); out.push(`<blockquote>${_inline(bq[1])}</blockquote>`); continue; }
+
+    // HR
+    if (/^[-*_]{3,}$/.test(line.trim())) { flush(); out.push('<hr>'); continue; }
+
+    // Unordered list
+    const ul = line.match(/^\s*[-*+] (.+)$/);
+    if (ul) {
+      if (inPara) { out.push('</p>'); inPara = false; }
+      if (inOl)   { out.push('</ol>'); inOl = false; }
+      if (!inUl)  { out.push('<ul>'); inUl = true; }
+      out.push(`<li>${_inline(ul[1])}</li>`); continue;
+    }
+
+    // Ordered list
+    const ol = line.match(/^\s*\d+\. (.+)$/);
+    if (ol) {
+      if (inPara) { out.push('</p>'); inPara = false; }
+      if (inUl)   { out.push('</ul>'); inUl = false; }
+      if (!inOl)  { out.push('<ol>'); inOl = true; }
+      out.push(`<li>${_inline(ol[1])}</li>`); continue;
+    }
+
+    // Table header row (followed by separator)
+    if (line.startsWith('|') && (lines[i+1]||'').match(/^\|[-| :]+\|$/)) {
+      flush();
+      const cols = line.split('|').slice(1,-1);
+      out.push(`<table><thead><tr>${cols.map(c=>`<th>${_inline(c.trim())}</th>`).join('')}</tr></thead><tbody>`);
+      i++; continue; // skip separator line
+    }
+    // Table body row
+    if (line.startsWith('|') && line.endsWith('|') && out.length && (out[out.length-1].endsWith('</tr>') || out[out.length-1].endsWith('<tbody>'))) {
+      const cols = line.split('|').slice(1,-1);
+      out.push(`<tr>${cols.map(c=>`<td>${_inline(c.trim())}</td>`).join('')}</tr>`);
+      if (!(lines[i+1]||'').startsWith('|')) out.push('</tbody></table>');
+      continue;
+    }
+
+    // Regular paragraph text
+    if (inUl) { out.push('</ul>'); inUl = false; }
+    if (inOl) { out.push('</ol>'); inOl = false; }
+    if (!inPara) { out.push('<p>'); inPara = true; } else out.push('<br>');
+    out.push(_inline(line));
+  }
+  flush();
+
+  return out.join('').replace(/\x00BLK(\d+)\x00/g, (_, i) => blocks[+i]);
+}
+
+function _inline(text) {
+  return text
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
 }
 
 /* ═══════════════════════════════════════════════════════════

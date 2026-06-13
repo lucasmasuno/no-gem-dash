@@ -224,12 +224,52 @@
       </div>
     </div>
 
+    <!-- AI Providers -->
+    <div class="section-hd" style="margin-top:24px">AI Providers</div>
+    <div class="qs-card">
+      <div class="qs-field">
+        <label class="form-label">Active provider</label>
+        <select class="form-select" id="provider-select" onchange="setActiveProvider(this.value)">
+          <option value="gemini">Google Gemini</option>
+          <option value="claude">Anthropic Claude</option>
+        </select>
+      </div>
+      <div class="qs-field" style="margin-top:10px">
+        <label class="form-label">Update API key</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input class="form-input" id="provider-key-input" type="password" placeholder="Paste key to update…" autocomplete="new-password" style="flex:1;font-size:11px">
+          <button class="save-btn" onclick="saveProviderKey()">Save</button>
+        </div>
+        <div id="provider-key-status" style="font-size:10px;color:var(--m);margin-top:4px"></div>
+      </div>
+      <div id="provider-key-hint" style="font-size:10px;color:var(--m);margin-top:6px;padding-top:6px;border-top:1px solid var(--div)">
+        Key saved here is stored in Firestore (auth-gated). For production, rotate in GCP Secret Manager instead.
+      </div>
+    </div>
+
+    <!-- Discord channels -->
+    <div class="section-hd" style="margin-top:24px">Discord Channels</div>
+    <div id="discord-channels-list" style="margin-bottom:10px"></div>
+    <div class="qs-card">
+      <div class="qs-field">
+        <label class="form-label">Add channel</label>
+        <input class="form-input" id="new-ch-key" placeholder="Key (e.g. general, alerts)" style="margin-bottom:6px;font-size:11px">
+        <input class="form-input" id="new-ch-id" placeholder="Discord channel ID (numeric)" style="margin-bottom:6px;font-size:11px">
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
+          <label style="font-size:11px;color:var(--m);white-space:nowrap">Auto-thread</label>
+          <input type="checkbox" id="new-ch-thread">
+          <input class="form-input" id="new-ch-threadname" placeholder="Thread name template (optional)" style="flex:1;font-size:11px">
+        </div>
+        <button class="save-btn" onclick="addDiscordChannel()">Add channel</button>
+      </div>
+    </div>
+
     <!-- Per-agent channel assignments -->
-    <div class="section-hd">Agent channel assignments</div>
+    <div class="section-hd" style="margin-top:24px">Agent → channel assignments</div>
     <div id="agent-ch-list"></div>
 
     <!-- Admin -->
-    <div class="section-hd" style="margin-top:20px">Admin</div>
+    <div class="section-hd" style="margin-top:24px">Admin</div>
     <p class="admin-hint">All changes go through the API at the URL configured on page load.</p>
     <button class="save-btn" onclick="resetDashLayout()">↺ Reset dashboard layout</button>
   </section>
@@ -316,6 +356,8 @@
 <!-- ═══════════════════════════════════════════════
      SCRIPTS
 ════════════════════════════════════════════════ -->
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: false, theme: 'dark', securityLevel: 'loose' });</script>
 <script src="shared/ui.js"></script>
 <script src="app.js"></script>
 </body>

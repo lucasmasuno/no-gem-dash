@@ -590,6 +590,8 @@ header{margin:12px;padding:10px 16px}
 .docs-content a{color:var(--acc)}
 .docs-content hr{border:none;border-top:1px solid var(--div);margin:16px 0}
 .docs-content strong{font-weight:700;color:var(--txt)}
+.docs-content .mermaid{background:color-mix(in srgb,var(--d-sh) 15%,transparent);border-radius:10px;padding:16px;margin:12px 0;overflow-x:auto;text-align:center}
+.docs-content .mermaid svg{max-width:100%;height:auto}
 
 /* ══════════════════════════════════════════════════════════════
    LOADING STATE
