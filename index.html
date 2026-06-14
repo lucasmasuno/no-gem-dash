@@ -20,13 +20,21 @@
     <button class="nav-pill" data-page="tasks" role="tab">
       Tasks<span id="tasks-badge" class="nav-badge" style="display:none"></span>
     </button>
-    <button class="nav-pill" data-page="knowledge" role="tab">Knowledge</button>
     <button class="nav-pill" data-page="inbox" role="tab">
       Inbox<span id="inbox-badge" class="nav-badge warn" style="display:none"></span>
     </button>
-    <button class="nav-pill" data-page="analytics" role="tab">Analytics</button>
-    <button class="nav-pill" data-page="settings" role="tab">Settings</button>
     <button class="nav-pill" data-page="docs" role="tab">Docs</button>
+    <div class="ndrop" id="more-nav-drop">
+      <button class="nav-pill" onclick="toggleDrop('more-nav-drop')" title="More pages" aria-label="More">⋯</button>
+      <div class="ndrop-panel" id="more-nav-panel">
+        <button class="ndrop-opt" onclick="navTo('channels');toggleDrop('more-nav-drop')">💬 Channels</button>
+        <button class="ndrop-opt" onclick="navTo('repos');toggleDrop('more-nav-drop')">📦 Repos</button>
+        <hr class="ndrop-sep">
+        <button class="ndrop-opt" onclick="navTo('analytics');toggleDrop('more-nav-drop')">📊 Analytics</button>
+        <button class="ndrop-opt" onclick="navTo('knowledge');toggleDrop('more-nav-drop')">📚 Sources</button>
+        <button class="ndrop-opt" onclick="navTo('settings');toggleDrop('more-nav-drop')">⚙️ Settings</button>
+      </div>
+    </div>
   </nav>
 
   <div class="header-controls">
@@ -129,31 +137,6 @@
     <div id="task-feed" class="feed-box"></div>
   </section>
 
-  <!-- ── KNOWLEDGE ──────────────────────────────── -->
-  <section class="page" id="page-knowledge" data-mob-panel="knowledge">
-    <div class="page-hd">
-      <div class="page-title">Knowledge</div>
-    </div>
-
-    <div class="tab-bar" role="tablist">
-      <button class="tab-btn active" data-ktab="sources" onclick="setKTab(this,'sources')">Sources</button>
-      <button class="tab-btn" data-ktab="blocked" onclick="setKTab(this,'blocked')">Blocked</button>
-      <button class="tab-btn" data-ktab="followups" onclick="setKTab(this,'followups')">Follow-ups</button>
-      <button class="tab-btn" data-ktab="merges" onclick="setKTab(this,'merges')">Merges</button>
-      <button class="tab-btn" data-ktab="vaults" onclick="setKTab(this,'vaults')">Vaults</button>
-      <button class="tab-btn" data-ktab="bases" onclick="setKTab(this,'bases')">Bases</button>
-    </div>
-
-    <div class="tab-content">
-      <div id="k-sources" class="feed-box"></div>
-      <div id="k-blocked" class="feed-box hidden"></div>
-      <div id="k-followups" class="feed-box hidden"></div>
-      <div id="k-merges" class="feed-box hidden"></div>
-      <div id="k-vaults" class="feed-box hidden"></div>
-      <div id="k-bases" class="feed-box hidden"></div>
-    </div>
-  </section>
-
   <!-- ── INBOX ──────────────────────────────────── -->
   <section class="page" id="page-inbox" data-mob-panel="inbox">
     <div class="page-hd">
@@ -173,6 +156,42 @@
     <!-- Fact checks -->
     <div class="section-hd" style="margin-top:24px">Fact Checks</div>
     <div id="factcheck-list"></div>
+  </section>
+
+  <!-- ── DOCS ───────────────────────────────────── -->
+  <section class="page" id="page-docs" data-mob-panel="docs">
+    <div class="page-hd"><div class="page-title">Docs</div></div>
+    <div class="docs-layout">
+      <div class="docs-tree-panel" id="docs-tree"></div>
+      <div class="docs-reader" id="docs-reader">
+        <div class="docs-welcome">Select a document from the tree</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── SOURCES (was Knowledge) ───────────────── -->
+  <section class="page" id="page-knowledge" data-mob-panel="knowledge">
+    <div class="page-hd">
+      <div class="page-title">Sources</div>
+    </div>
+
+    <div class="tab-bar" role="tablist">
+      <button class="tab-btn active" data-ktab="sources" onclick="setKTab(this,'sources')">Sources</button>
+      <button class="tab-btn" data-ktab="blocked" onclick="setKTab(this,'blocked')">Blocked</button>
+      <button class="tab-btn" data-ktab="followups" onclick="setKTab(this,'followups')">Follow-ups</button>
+      <button class="tab-btn" data-ktab="merges" onclick="setKTab(this,'merges')">Merges</button>
+      <button class="tab-btn" data-ktab="vaults" onclick="setKTab(this,'vaults')">Vaults</button>
+      <button class="tab-btn" data-ktab="bases" onclick="setKTab(this,'bases')">Bases</button>
+    </div>
+
+    <div class="tab-content">
+      <div id="k-sources" class="feed-box"></div>
+      <div id="k-blocked" class="feed-box hidden"></div>
+      <div id="k-followups" class="feed-box hidden"></div>
+      <div id="k-merges" class="feed-box hidden"></div>
+      <div id="k-vaults" class="feed-box hidden"></div>
+      <div id="k-bases" class="feed-box hidden"></div>
+    </div>
   </section>
 
   <!-- ── ANALYTICS ──────────────────────────────── -->
@@ -247,24 +266,34 @@
       </div>
     </div>
 
-    <!-- Discord channels -->
-    <div class="section-hd" style="margin-top:24px">Discord Channels</div>
-    <div id="discord-channels-list" style="margin-bottom:10px"></div>
-    <div class="qs-card">
+    <!-- Context Window -->
+    <div class="section-hd" style="margin-top:24px">Context Window</div>
+    <div class="qs-card" id="context-settings-card">
       <div class="qs-field">
-        <label class="form-label">Add channel</label>
-        <input class="form-input" id="new-ch-key" placeholder="Key (e.g. general, alerts)" style="margin-bottom:6px;font-size:11px">
-        <input class="form-input" id="new-ch-id" placeholder="Discord channel ID (numeric)" style="margin-bottom:6px;font-size:11px">
-        <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
-          <label style="font-size:11px;color:var(--m);white-space:nowrap">Auto-thread</label>
-          <input type="checkbox" id="new-ch-thread">
-          <input class="form-input" id="new-ch-threadname" placeholder="Thread name template (optional)" style="flex:1;font-size:11px">
+        <label class="form-label">Max messages retained</label>
+        <div style="display:flex;gap:10px;align-items:center">
+          <input type="range" id="ctx-max-messages" min="5" max="100" step="5" value="20"
+            style="flex:1" oninput="document.getElementById('ctx-max-label').textContent=this.value">
+          <span id="ctx-max-label" style="font-size:12px;font-weight:700;color:var(--txt);min-width:28px;text-align:right">20</span>
         </div>
-        <button class="save-btn" onclick="addDiscordChannel()">Add channel</button>
+        <div style="font-size:10px;color:var(--m);margin-top:3px">Messages loaded per chat context window. Lower = cheaper, higher = more memory.</div>
       </div>
+      <div class="qs-field" style="margin-top:12px">
+        <label class="form-label">Context compression</label>
+        <div style="display:flex;align-items:center;gap:10px">
+          <button class="flash-toggle inactive" id="ctx-compress-btn" onclick="toggleContextCompression()">Off</button>
+          <select class="form-select" id="ctx-compress-model" style="width:auto;font-size:11px" onchange="saveContextSettings()">
+            <option value="flash">Flash (fast + cheap)</option>
+            <option value="pro">Pro (richer summary)</option>
+          </select>
+        </div>
+        <div style="font-size:10px;color:var(--m);margin-top:3px">Summarizes older messages with AI before injecting into context. Reduces token cost on long conversations.</div>
+      </div>
+      <button class="save-btn" style="margin-top:12px" onclick="saveContextSettings()">Save context settings</button>
+      <div id="ctx-save-status" style="font-size:10px;color:var(--m);margin-top:4px"></div>
     </div>
 
-    <!-- Per-agent channel assignments -->
+    <!-- Agent → channel assignments -->
     <div class="section-hd" style="margin-top:24px">Agent → channel assignments</div>
     <div id="agent-ch-list"></div>
 
@@ -274,13 +303,145 @@
     <button class="save-btn" onclick="resetDashLayout()">↺ Reset dashboard layout</button>
   </section>
 
-  <!-- ── DOCS ───────────────────────────────────── -->
-  <section class="page" id="page-docs" data-mob-panel="docs">
-    <div class="page-hd"><div class="page-title">Docs</div></div>
-    <div class="docs-layout">
-      <div class="docs-tree-panel" id="docs-tree"></div>
-      <div class="docs-reader" id="docs-reader">
-        <div class="docs-welcome">Select a document from the tree</div>
+  <!-- ── CHANNELS ───────────────────────────────── -->
+  <section class="page" id="page-channels" data-mob-panel="channels">
+    <div class="page-hd">
+      <div>
+        <div class="page-title">Discord Channels</div>
+        <div class="page-sub">Manage bot channel registry + agent routing</div>
+      </div>
+      <button class="save-btn" onclick="_fetchDiscordGuilds()" id="fetch-guilds-btn">↻ Fetch from Discord</button>
+    </div>
+
+    <!-- Guild picker (populated after fetch) -->
+    <div id="guild-picker" style="display:none;margin-bottom:12px">
+      <label class="form-label">Server</label>
+      <select class="form-select" id="guild-select" onchange="_onGuildSelect(this.value)" style="max-width:300px"></select>
+    </div>
+
+    <!-- Live channel tree -->
+    <div id="discord-live-channels" style="display:none;margin-bottom:16px">
+      <div class="section-hd" style="display:flex;align-items:center;gap:8px">
+        Server channels
+        <button class="save-btn" style="font-size:10px;padding:3px 10px;min-height:28px" onclick="_showCreateCategoryForm()">＋ New folder</button>
+        <button class="save-btn" style="font-size:10px;padding:3px 10px;min-height:28px" onclick="_showCreateChannelForm()">＋ New channel</button>
+      </div>
+      <div style="font-size:10px;color:var(--m);margin-bottom:8px">Click any text channel to pre-fill the register form. Green = already registered.</div>
+      <div id="live-channel-tree" class="ch-tree"></div>
+
+      <!-- New category (folder) form -->
+      <div id="create-cat-form" style="display:none;margin-top:10px;padding:12px;background:var(--bg);box-shadow:var(--sh-press);border-radius:10px">
+        <div style="font-size:11px;font-weight:700;color:var(--txt);margin-bottom:8px">📁 New category</div>
+        <input class="form-input" id="new-cat-name" placeholder="Category name (e.g. BOT CHANNELS)" style="margin-bottom:8px;font-size:11px">
+        <div style="display:flex;gap:6px">
+          <button class="save-btn" onclick="createDiscordCategory()" id="create-cat-btn">Create folder</button>
+          <button class="refresh-btn" onclick="document.getElementById('create-cat-form').style.display='none'">Cancel</button>
+        </div>
+        <div id="create-cat-status" style="font-size:10px;color:var(--m);margin-top:4px"></div>
+      </div>
+
+      <!-- New channel form -->
+      <div id="create-ch-form" style="display:none;margin-top:10px;padding:14px;background:var(--bg);box-shadow:var(--sh-press);border-radius:10px">
+        <div style="font-size:11px;font-weight:700;color:var(--txt);margin-bottom:10px">💬 New channel</div>
+        <input class="form-input" id="new-discord-ch-name" placeholder="Channel name (letters, numbers, dashes)" style="margin-bottom:8px;font-size:11px">
+        <div class="form-grid" style="margin-bottom:8px">
+          <div>
+            <label class="form-label">Type</label>
+            <select class="form-select" id="new-discord-ch-type" style="font-size:11px">
+              <option value="0">💬 Text channel</option>
+              <option value="5">📢 Announcement</option>
+              <option value="11">🧵 Thread channel</option>
+              <option value="15">🗂️ Forum channel</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label">Category (folder)</label>
+            <select class="form-select" id="new-discord-ch-parent" style="font-size:11px">
+              <option value="">— no category —</option>
+            </select>
+          </div>
+        </div>
+        <label style="font-size:11px;color:var(--m);cursor:pointer;display:flex;align-items:center;gap:6px;margin-bottom:10px">
+          <input type="checkbox" id="new-discord-ch-private"> 🔒 Private channel (visible to selected roles only)
+        </label>
+        <div style="margin-bottom:10px">
+          <label class="form-label">Map bots to this channel</label>
+          <div id="new-ch-bot-list" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <button class="save-btn" onclick="createDiscordChannel()" id="create-discord-ch-btn">Create in Discord</button>
+          <button class="refresh-btn" onclick="document.getElementById('create-ch-form').style.display='none'">Cancel</button>
+        </div>
+        <div id="create-discord-ch-status" style="font-size:10px;color:var(--m);margin-top:4px"></div>
+      </div>
+    </div>
+
+    <!-- Registered channels -->
+    <div class="section-hd">Registered channels</div>
+    <div id="registered-channel-list" style="margin-bottom:12px"></div>
+
+    <!-- Register channel form -->
+    <div class="qs-card">
+      <div class="qs-field">
+        <label class="form-label">Register channel</label>
+        <input class="form-input" id="reg-ch-key" placeholder="Key (e.g. general, alerts)" style="margin-bottom:6px;font-size:11px">
+        <input class="form-input" id="reg-ch-id" placeholder="Discord channel ID (numeric)" style="margin-bottom:6px;font-size:11px">
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
+          <label style="font-size:11px;color:var(--m);white-space:nowrap;cursor:pointer" for="reg-ch-thread">Auto-thread</label>
+          <input type="checkbox" id="reg-ch-thread">
+          <input class="form-input" id="reg-ch-threadname" placeholder="Thread name template (optional)" style="flex:1;font-size:11px">
+        </div>
+        <button class="save-btn" onclick="registerDiscordChannel()">Register</button>
+      </div>
+    </div>
+
+    <!-- (legacy hidden card kept for id refs) -->
+    <div id="create-discord-ch-card" style="display:none"></div>
+
+    <!-- Agent→channel assignments (also in Settings for quick access) -->
+    <div class="section-hd" style="margin-top:24px">Agent → channel routing</div>
+    <div id="ch-agent-assignments"></div>
+  </section>
+
+  <!-- ── REPOS ─────────────────────────────────── -->
+  <section class="page" id="page-repos" data-mob-panel="repos">
+    <div class="page-hd">
+      <div>
+        <div class="page-title">GitHub Repos</div>
+        <div class="page-sub">Search, browse, and create repositories</div>
+      </div>
+    </div>
+
+    <!-- Pinned repos -->
+    <div class="section-hd">Your repos</div>
+    <div id="pinned-repos" style="margin-bottom:16px"></div>
+
+    <!-- Search bar -->
+    <div class="section-hd" style="margin-top:20px">All repositories</div>
+    <div class="filter-bar" style="margin-bottom:12px">
+      <input class="filter-search" id="repo-search" placeholder="Search repos…" oninput="_debouncedRepoSearch()" style="flex:1">
+      <button class="save-btn" onclick="_loadRepos()">↻ Refresh</button>
+    </div>
+
+    <!-- Repo list -->
+    <div id="repo-list" class="feed-box" style="margin-bottom:16px"></div>
+
+    <!-- Create repo form -->
+    <div class="section-hd">Create new repository</div>
+    <div class="qs-card">
+      <div class="qs-field">
+        <input class="form-input" id="new-repo-name" placeholder="Repository name" style="margin-bottom:6px;font-size:11px">
+        <input class="form-input" id="new-repo-desc" placeholder="Description (optional)" style="margin-bottom:6px;font-size:11px">
+        <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px">
+          <label style="font-size:11px;color:var(--m);cursor:pointer;display:flex;align-items:center;gap:4px">
+            <input type="checkbox" id="new-repo-private" checked> Private
+          </label>
+          <label style="font-size:11px;color:var(--m);cursor:pointer;display:flex;align-items:center;gap:4px">
+            <input type="checkbox" id="new-repo-init" checked> Initialize with README
+          </label>
+        </div>
+        <button class="save-btn" onclick="createRepo()" id="create-repo-btn">Create repository</button>
+        <div id="create-repo-status" style="font-size:10px;color:var(--m);margin-top:4px"></div>
       </div>
     </div>
   </section>
@@ -300,14 +461,14 @@
     <span>Tasks</span>
     <span id="mob-tasks-badge" class="mob-tab-badge" style="display:none"></span>
   </button>
-  <button class="mob-tab" data-page="knowledge" onclick="navTo('knowledge')">
-    <span class="mob-tab-icon">📚</span>
-    <span>Knowledge</span>
-  </button>
   <button class="mob-tab" data-page="inbox" onclick="navTo('inbox')">
     <span class="mob-tab-icon">🚧</span>
     <span>Inbox</span>
     <span id="mob-inbox-badge" class="mob-tab-badge warn" style="display:none"></span>
+  </button>
+  <button class="mob-tab" data-page="docs" onclick="navTo('docs')">
+    <span class="mob-tab-icon">📄</span>
+    <span>Docs</span>
   </button>
   <button class="mob-tab" data-page="more" onclick="openMoreSheet()">
     <span class="mob-tab-icon">⋯</span>
@@ -316,7 +477,7 @@
 </nav>
 
 <!-- ═══════════════════════════════════════════════
-     MOBILE MORE SHEET
+     MOBILE MORE SHEET  (⋯ menu)
 ════════════════════════════════════════════════ -->
 <div class="mob-more-sheet" id="mob-more-sheet" onclick="closeMoreSheet(event)">
   <div class="mob-more-inner">
@@ -324,9 +485,20 @@
       <span class="mob-more-title">More</span>
       <button class="hbtn" onclick="closeMoreSheet()">✕</button>
     </div>
+
+    <!-- Primary secondary pages -->
+    <button class="mob-more-opt" onclick="navTo('channels');closeMoreSheet()">💬 Channels</button>
+    <button class="mob-more-opt" onclick="navTo('repos');closeMoreSheet()">📦 Repos</button>
+
+    <div class="mob-more-sep"></div>
+
+    <!-- Less-frequent pages -->
     <button class="mob-more-opt" onclick="navTo('analytics');closeMoreSheet()">📊 Analytics</button>
+    <button class="mob-more-opt" onclick="navTo('knowledge');closeMoreSheet()">📚 Sources</button>
     <button class="mob-more-opt" onclick="navTo('settings');closeMoreSheet()">⚙️ Settings</button>
-    <button class="mob-more-opt" onclick="navTo('docs');closeMoreSheet()">📄 Docs</button>
+
+    <div class="mob-more-sep"></div>
+
     <button class="mob-more-opt" onclick="loadDashboard();closeMoreSheet()">↺ Refresh</button>
     <button class="mob-more-opt" onclick="toggleTheme();closeMoreSheet()">🌙 Toggle theme</button>
   </div>

@@ -168,7 +168,9 @@ function navTo(pageId) {
   document.querySelectorAll('.mob-tab[data-page]').forEach(b => b.classList.toggle('active', b.dataset.page === pageId));
   if (pageId === 'analytics') _initCharts();
   if (pageId === 'docs') _initDocsIfNeeded();
-  if (pageId === 'settings') _loadDiscordChannels();
+  if (pageId === 'settings') { _loadDiscordChannels(); _loadContextSettings(); }
+  if (pageId === 'channels') _initChannelsPage();
+  if (pageId === 'repos') _initReposPage();
   window.scrollTo({ top:0, behavior:'instant' });
 }
 
@@ -189,6 +191,39 @@ function toggleDrop(id) {
     const close = (e) => { if (!drop.contains(e.target)) { drop.classList.remove('open'); document.removeEventListener('click', close); } };
     setTimeout(() => document.addEventListener('click', close), 10);
   }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   TOAST + CONFIRM HELPERS  (replace blocking alert/confirm)
+══════════════════════════════════════════════════════════════ */
+function showToast(msg, type = 'info', duration = 3500) {
+  const el = document.createElement('div');
+  el.className = `toast toast-${type}`;
+  el.textContent = msg;
+  document.body.appendChild(el);
+  requestAnimationFrame(() => el.classList.add('show'));
+  setTimeout(() => {
+    el.classList.remove('show');
+    setTimeout(() => el.remove(), 300);
+  }, duration);
+}
+
+// Replaces confirm() — inserts an inline banner next to a target element.
+// onConfirm fires when user clicks Confirm; banner auto-removes on dismiss.
+// Returns a cleanup fn in case you need to remove it early.
+function showConfirm(msg, onConfirm, targetEl) {
+  const existing = targetEl?.parentElement?.querySelector('.confirm-banner');
+  if (existing) { existing.remove(); return () => {}; }
+  const banner = document.createElement('div');
+  banner.className = 'confirm-banner';
+  banner.innerHTML = `<span style="flex:1">${esc(msg)}</span>
+    <button class="act-btn cancel" data-dismiss>Cancel</button>
+    <button class="act-btn resume" data-confirm>Confirm</button>`;
+  banner.querySelector('[data-confirm]').addEventListener('click', () => { banner.remove(); onConfirm(); });
+  banner.querySelector('[data-dismiss]').addEventListener('click', () => banner.remove());
+  if (targetEl) targetEl.insertAdjacentElement('afterend', banner);
+  else document.body.appendChild(banner);
+  return () => banner.remove();
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -713,8 +748,12 @@ function _renderPrivMatrix() {
    SETTINGS PAGE
 ══════════════════════════════════════════════════════════════ */
 function _renderSettings(channels) {
-  const el = document.getElementById('agent-ch-list'); if (!el) return;
-  // channels may be Discord channels (key+id shape) or LINE channels (channelId shape)
+  _renderAgentChannelAssignments(channels, 'agent-ch-list');
+  _renderAgentChannelAssignments(channels, 'ch-agent-assignments');
+}
+
+function _renderAgentChannelAssignments(channels, containerId) {
+  const el = document.getElementById(containerId); if (!el) return;
   const opts = (channels || []).map(ch => {
     const val = ch.key || ch.channelId || '';
     const label = ch.key ? `${ch.key} (${ch.id || ch.channelId || ''})` : ch.channelId;
@@ -747,7 +786,7 @@ async function setActiveProvider(value) {
 
 async function saveProviderKey() {
   const key = document.getElementById('provider-key-input')?.value.trim();
-  if (!key) { alert('Paste an API key first.'); return; }
+  if (!key) { showToast('Paste an API key first.', 'warn'); return; }
   const btn = document.querySelector('[onclick="saveProviderKey()"]');
   const statusEl = document.getElementById('provider-key-status');
   if (btn) { btn.disabled = true; btn.textContent = '…'; }
@@ -779,63 +818,69 @@ async function _loadDiscordChannels() {
     if (!res.ok) return;
     const data = await res.json();
     _discordChannels = Object.entries(data.channels || {}).map(([key, ch]) => ({ key, ...ch }));
-    _renderDiscordChannelsList(_discordChannels);
+    _renderRegisteredChannels(_discordChannels);
     _renderSettings(_discordChannels); // refresh agent assignment dropdowns with live channel list
   } catch {}
 }
 
-function _renderDiscordChannelsList(channels) {
-  const el = document.getElementById('discord-channels-list'); if (!el) return;
-  if (!channels || !channels.length) {
-    el.innerHTML = '<div style="font-size:11px;color:var(--m)">No Discord channels configured.</div>';
-    return;
-  }
-  el.innerHTML = channels.map(ch => `
-    <div class="src-row" data-ch-key="${esc(ch.key)}">
-      <div class="src-body">
-        <div class="src-name">${esc(ch.key)}</div>
-        <div class="src-meta">
-          <span style="color:var(--m)">${esc(ch.id || ch.channelId || '')}</span>
-          <span style="color:${ch.asThread?'#7289DA':'var(--m2)'}">${ch.asThread ? 'thread' : 'post'}</span>
-          ${ch.threadName ? `<span style="font-size:9px;color:var(--m)">${esc(ch.threadName)}</span>` : ''}
+function _renderRegisteredChannels(channels) {
+  // Renders into both the old settings page location (if present) and the new Channels page
+  const containers = ['registered-channel-list'].filter(id => document.getElementById(id));
+  const html = (!channels || !channels.length)
+    ? '<div style="font-size:11px;color:var(--m)">No Discord channels registered yet.</div>'
+    : channels.map(ch => `
+      <div class="src-row" data-ch-key="${esc(ch.key)}">
+        <div class="src-body">
+          <div class="src-name"># ${esc(ch.key)}</div>
+          <div class="src-meta">
+            <span style="font-family:monospace;color:var(--m)">${esc(ch.id || ch.channelId || '')}</span>
+            <span style="color:${ch.asThread?'#7289DA':'var(--m2)'}">${ch.asThread ? '🧵 thread' : '💬 post'}</span>
+            ${ch.threadName ? `<span style="font-size:9px;color:var(--m)">${esc(ch.threadName)}</span>` : ''}
+          </div>
         </div>
-      </div>
-      <button class="act-btn cancel" onclick="removeDiscordChannel('${esc(ch.key)}')" style="font-size:8px;padding:2px 8px">✕</button>
-    </div>`).join('');
+        <button class="act-btn cancel" onclick="removeDiscordChannel('${esc(ch.key)}')" style="font-size:8px;padding:2px 8px">✕</button>
+      </div>`).join('');
+  containers.forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = html; });
 }
 
-async function addDiscordChannel() {
-  const key = document.getElementById('new-ch-key')?.value.trim();
-  const id  = document.getElementById('new-ch-id')?.value.trim();
-  const asThread  = document.getElementById('new-ch-thread')?.checked || false;
-  const threadName = document.getElementById('new-ch-threadname')?.value.trim() || undefined;
-  if (!key || !id) { alert('Key and Channel ID are required.'); return; }
+async function registerDiscordChannel() {
+  const key = document.getElementById('reg-ch-key')?.value.trim();
+  const id  = document.getElementById('reg-ch-id')?.value.trim();
+  const asThread  = document.getElementById('reg-ch-thread')?.checked || false;
+  const threadName = document.getElementById('reg-ch-threadname')?.value.trim() || undefined;
+  if (!key || !id) { showToast('Key and Channel ID are required.', 'warn'); return; }
   const res = await fetch(apiUrl('/api/channels'), {
     method:'POST', headers:{..._authHeaders(),'Content-Type':'application/json'},
     body: JSON.stringify({ key, id, asThread, ...(threadName ? { threadName } : {}) })
   });
   if (res.ok) {
-    ['new-ch-key','new-ch-id','new-ch-threadname'].forEach(eId => { const e = document.getElementById(eId); if (e) e.value = ''; });
-    const cb = document.getElementById('new-ch-thread'); if (cb) cb.checked = false;
+    ['reg-ch-key','reg-ch-id','reg-ch-threadname'].forEach(eId => { const e = document.getElementById(eId); if (e) e.value = ''; });
+    const cb = document.getElementById('reg-ch-thread'); if (cb) cb.checked = false;
+    showToast(`Channel "${key}" registered.`, 'success');
     _loadDiscordChannels();
-  } else alert('Failed: ' + res.status);
+  } else showToast('Failed to save: ' + res.status, 'error');
 }
 
-async function removeDiscordChannel(key) {
-  if (!confirm(`Remove channel "${key}"?`)) return;
+// Keep old name for any legacy callers
+async function addDiscordChannel() { return registerDiscordChannel(); }
+
+function removeDiscordChannel(key) {
   const row = document.querySelector(`[data-ch-key="${CSS.escape(key)}"]`);
-  if (row) row.style.opacity = '0.3';
-  const res = await fetch(apiUrl(`/api/channels/${encodeURIComponent(key)}`), {
-    method:'DELETE', headers:_authHeaders()
-  });
-  if (res.ok) _loadDiscordChannels();
-  else { if (row) row.style.opacity = ''; alert('Failed: ' + res.status); }
+  showConfirm(`Remove channel "${key}"?`, async () => {
+    if (row) row.style.opacity = '0.3';
+    const res = await fetch(apiUrl(`/api/channels/${encodeURIComponent(key)}`), {
+      method:'DELETE', headers:_authHeaders()
+    });
+    if (res.ok) { showToast(`Channel "${key}" removed.`, 'success'); _loadDiscordChannels(); }
+    else { if (row) row.style.opacity = ''; showToast('Failed: ' + res.status, 'error'); }
+  }, row);
 }
 
-async function resetDashLayout() {
-  if (!confirm('Reset adaptive panel order back to defaults?')) return;
-  await fetch(apiUrl('/api/dashboard/prefs'), { method:'DELETE', headers:_authHeaders() }).catch(()=>{});
-  loadDashboard();
+function resetDashLayout() {
+  showConfirm('Reset panel layout back to defaults?', async () => {
+    await fetch(apiUrl('/api/dashboard/prefs'), { method:'DELETE', headers:_authHeaders() }).catch(()=>{});
+    loadDashboard();
+  }, document.querySelector('[onclick="resetDashLayout()"]'));
 }
 
 async function saveAgentChannel(agentId, channelKey) {
@@ -870,22 +915,23 @@ function _renderLocationPill() {
 async function saveLocationOverride() {
   const city = document.getElementById('loc-city-input')?.value.trim();
   const cc = document.getElementById('loc-country-input')?.value.trim().toUpperCase();
-  if (!city) { alert('City is required.'); return; }
+  if (!city) { showToast('City is required.', 'warn'); return; }
   const res = await fetch(apiUrl('/api/project/location'), {
     method:'POST', headers:{..._authHeaders(),'Content-Type':'application/json'},
     body: JSON.stringify({ city, countryCode:cc || null, userOverride:true })
   });
-  if (!res.ok) { alert('Save failed: ' + res.status); return; }
+  if (!res.ok) { showToast('Save failed: ' + res.status, 'error'); return; }
   loadDashboard();
 }
 
-async function clearLocationOverride() {
-  if (!confirm('Clear manual override? Auto-inference will resume.')) return;
-  await fetch(apiUrl('/api/project/location'), {
-    method:'POST', headers:{..._authHeaders(),'Content-Type':'application/json'},
-    body: JSON.stringify({ clearOverride:true })
-  }).catch(()=>{});
-  loadDashboard();
+function clearLocationOverride() {
+  showConfirm('Clear manual override? Auto-inference will resume.', async () => {
+    await fetch(apiUrl('/api/project/location'), {
+      method:'POST', headers:{..._authHeaders(),'Content-Type':'application/json'},
+      body: JSON.stringify({ clearOverride:true })
+    }).catch(()=>{});
+    loadDashboard();
+  }, document.getElementById('location-pill'));
 }
 
 function closeLocOverlay(e) {
@@ -1083,19 +1129,26 @@ async function toggleSource(id, enabled) {
   }).catch(()=>{});
 }
 
-async function blockSource(id) {
-  const reason = prompt('Block reason:', 'manually blocked'); if (!reason) return;
-  const row = document.querySelector(`.src-row[data-id="${id}"]`); if (row) row.style.opacity = '0.3';
-  await fetch(apiUrl(`/api/sources/${id}/block`), {
-    method:'POST', headers:{..._authHeaders(),'Content-Type':'application/json'}, body:JSON.stringify({ reason })
-  }).catch(()=>{});
-  loadDashboard();
+function blockSource(id) {
+  const row = document.querySelector(`.src-row[data-id="${id}"]`);
+  showConfirm('Block this source?', async () => {
+    if (row) row.style.opacity = '0.3';
+    await fetch(apiUrl(`/api/sources/${id}/block`), {
+      method:'POST', headers:{..._authHeaders(),'Content-Type':'application/json'},
+      body: JSON.stringify({ reason: 'manually blocked' })
+    }).catch(()=>{});
+    showToast('Source blocked.', 'success');
+    loadDashboard();
+  }, row);
 }
 
-async function unblockSource(id) {
-  if (!confirm('Unblock this source?')) return;
-  await fetch(apiUrl(`/api/sources/${id}/unblock`), { method:'POST', headers:_authHeaders() }).catch(()=>{});
-  loadDashboard();
+function unblockSource(id) {
+  const row = document.querySelector(`.src-row[data-id="${id}"]`);
+  showConfirm('Unblock this source?', async () => {
+    await fetch(apiUrl(`/api/sources/${id}/unblock`), { method:'POST', headers:_authHeaders() }).catch(()=>{});
+    showToast('Source unblocked.', 'success');
+    loadDashboard();
+  }, row);
 }
 
 async function inboxDone(id) {
@@ -1104,23 +1157,29 @@ async function inboxDone(id) {
   row?.remove();
 }
 
-async function inboxIgnore(id) {
-  if (!confirm('Dismiss without resolving?')) return;
-  const row = document.querySelector(`[data-id="${id}"]`); if (row) row.style.opacity = '0.3';
-  await fetch(apiUrl(`/api/inbox/${id}/ignore`), { method:'POST', headers:_authHeaders() }).catch(()=>{});
-  row?.remove();
+function inboxIgnore(id) {
+  const row = document.querySelector(`[data-id="${id}"]`);
+  showConfirm('Dismiss without resolving?', async () => {
+    if (row) row.style.opacity = '0.3';
+    await fetch(apiUrl(`/api/inbox/${id}/ignore`), { method:'POST', headers:_authHeaders() }).catch(()=>{});
+    row?.remove();
+  }, row);
 }
 
-async function markMerged(id) {
-  if (!confirm('Mark as merged?')) return;
-  const res = await fetch(apiUrl(`/api/merges/${encodeURIComponent(id)}/mark-merged`), { method:'POST', headers:_authHeaders() });
-  if (res.ok) { const row = document.querySelector(`[data-merge-id="${id}"]`); row?.remove(); }
+function markMerged(id) {
+  const row = document.querySelector(`[data-merge-id="${id}"]`);
+  showConfirm('Mark as merged?', async () => {
+    const res = await fetch(apiUrl(`/api/merges/${encodeURIComponent(id)}/mark-merged`), { method:'POST', headers:_authHeaders() });
+    if (res.ok) row?.remove();
+  }, row);
 }
 
-async function dismissMerge(id) {
-  if (!confirm('Dismiss this suggestion?')) return;
-  const res = await fetch(apiUrl(`/api/merges/${encodeURIComponent(id)}/dismiss`), { method:'POST', headers:_authHeaders() });
-  if (res.ok) { const row = document.querySelector(`[data-merge-id="${id}"]`); row?.remove(); }
+function dismissMerge(id) {
+  const row = document.querySelector(`[data-merge-id="${id}"]`);
+  showConfirm('Dismiss this suggestion?', async () => {
+    const res = await fetch(apiUrl(`/api/merges/${encodeURIComponent(id)}/dismiss`), { method:'POST', headers:_authHeaders() });
+    if (res.ok) row?.remove();
+  }, row);
 }
 
 async function researchFollowup(pageSlug, question, btn) {
@@ -1141,10 +1200,13 @@ async function dismissFollowup(pageSlug, question, btn) {
   else { btn.disabled = false; btn.textContent = '✕'; }
 }
 
-async function deleteVault(id) {
-  if (!confirm(`Remove vault "${id}"? GitHub repo is NOT deleted.`)) return;
-  const res = await fetch(apiUrl(`/api/vaults/${encodeURIComponent(id)}`), { method:'DELETE', headers:_authHeaders() });
-  if (res.ok) { const row = document.querySelector(`[data-vault-id="${id}"]`); row?.remove(); }
+function deleteVault(id) {
+  const row = document.querySelector(`[data-vault-id="${id}"]`);
+  showConfirm(`Remove vault "${id}"? GitHub repo is NOT deleted.`, async () => {
+    const res = await fetch(apiUrl(`/api/vaults/${encodeURIComponent(id)}`), { method:'DELETE', headers:_authHeaders() });
+    if (res.ok) row?.remove();
+    else showToast('Delete failed: ' + res.status, 'error');
+  }, row);
 }
 
 async function runBase(id) {
@@ -1156,10 +1218,13 @@ async function runBase(id) {
   resEl.textContent = JSON.stringify(data, null, 2);
 }
 
-async function deleteBase(id) {
-  if (!confirm(`Delete base "${id}"?`)) return;
-  const res = await fetch(apiUrl(`/api/bases/${encodeURIComponent(id)}`), { method:'DELETE', headers:_authHeaders() });
-  if (res.ok) { const row = document.querySelector(`[data-base-slug="${id}"]`); row?.remove(); }
+function deleteBase(id) {
+  const row = document.querySelector(`[data-base-slug="${id}"]`);
+  showConfirm(`Delete base "${id}"?`, async () => {
+    const res = await fetch(apiUrl(`/api/bases/${encodeURIComponent(id)}`), { method:'DELETE', headers:_authHeaders() });
+    if (res.ok) row?.remove();
+    else showToast('Delete failed: ' + res.status, 'error');
+  }, row);
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -1499,6 +1564,432 @@ document.addEventListener('keydown', e => {
     document.querySelectorAll('.ndrop').forEach(d => d.classList.remove('open'));
   }
 });
+
+/* ═══════════════════════════════════════════════════════════
+   CHANNELS PAGE
+   Manages Discord channel registry + live fetch from Discord API
+══════════════════════════════════════════════════════════════ */
+let _guildsData = [];         // cached from last _fetchDiscordGuilds call
+let _selectedGuildId = null;
+
+function _initChannelsPage() {
+  _loadDiscordChannels();
+  // Show create-channel card only after guilds are fetched
+  const createCard = document.getElementById('create-discord-ch-card');
+  if (createCard) createCard.style.display = 'none';
+}
+
+async function _fetchDiscordGuilds() {
+  const btn = document.getElementById('fetch-guilds-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Fetching…'; }
+  try {
+    const res = await fetch(apiUrl('/api/discord/guilds'), { headers: _authHeaders() });
+    if (res.status === 401) { _handleUnauthorized(); return; }
+    if (!res.ok) { showToast('Discord fetch failed: ' + res.status, 'error'); return; }
+    const data = await res.json();
+    _guildsData = data.guilds || [];
+    if (!_guildsData.length) { showToast('Bot is not in any Discord server, or DISCORD_BOT_TOKEN is not set.', 'warn'); return; }
+    _renderGuildPicker(_guildsData);
+    if (_guildsData.length === 1) {
+      _selectedGuildId = _guildsData[0].id;
+      _renderLiveChannels(_guildsData[0]);
+    }
+    const createCard = document.getElementById('create-discord-ch-card');
+    if (createCard) createCard.style.display = '';
+  } catch (e) {
+    showToast('Error fetching guilds: ' + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '↻ Fetch from Discord'; }
+  }
+}
+
+function _renderGuildPicker(guilds) {
+  const picker = document.getElementById('guild-picker');
+  const sel = document.getElementById('guild-select');
+  if (!picker || !sel) return;
+  sel.innerHTML = guilds.map(g => `<option value="${esc(g.id)}">${esc(g.name)}</option>`).join('');
+  picker.style.display = guilds.length > 1 ? '' : 'none';
+  if (guilds.length === 1) sel.value = guilds[0].id;
+}
+
+function _onGuildSelect(guildId) {
+  _selectedGuildId = guildId;
+  const guild = _guildsData.find(g => g.id === guildId);
+  if (guild) _renderLiveChannels(guild);
+}
+
+const CH_TYPE_ICON = { 0:'#', 2:'🔊', 4:'📁', 5:'📢', 11:'🧵', 15:'🗂️' };
+
+function _renderLiveChannels(guild) {
+  const container = document.getElementById('discord-live-channels');
+  const tree = document.getElementById('live-channel-tree');
+  const parentSel = document.getElementById('new-discord-ch-parent');
+  if (!container || !tree) return;
+
+  // Populate category dropdown for new channel creation
+  const cats = guild.channels.filter(c => c.type === 4).sort((a,b) => (a.position||0)-(b.position||0));
+  if (parentSel) {
+    parentSel.innerHTML = '<option value="">— no category —</option>'
+      + cats.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+  }
+
+  // Populate bot list for new channel creation
+  _renderNewChannelBotList();
+
+  const registeredIds = new Set(_discordChannels.map(ch => String(ch.id || ch.channelId || '')));
+  const clickable = new Set([0, 5, 11, 15]);
+
+  function chItem(ch) {
+    const icon = CH_TYPE_ICON[ch.type] || '#';
+    const isReg = registeredIds.has(String(ch.id));
+    const cls = ['ch-tree-item', isReg ? 'registered' : ''].filter(Boolean).join(' ');
+    const click = clickable.has(ch.type) ? `onclick="_prefillChannelForm('${esc(ch.id)}','${esc(ch.name)}')"` : '';
+    return `<div class="${cls}" ${click} title="ID: ${esc(ch.id)}">
+      <span style="flex-shrink:0">${icon}</span>
+      <span class="ch-tree-item-name">${esc(ch.name)}</span>
+      ${isReg ? '<span style="font-size:9px;color:var(--grn);flex-shrink:0">✓</span>' : ''}
+    </div>`;
+  }
+
+  const sections = [];
+
+  // Channels in categories
+  for (const cat of cats) {
+    const children = guild.channels
+      .filter(c => c.parentId === cat.id)
+      .sort((a,b) => (a.position||0)-(b.position||0));
+    sections.push(`
+      <div style="margin-bottom:2px">
+        <div class="ch-tree-cat" onclick="this.classList.toggle('collapsed');this.nextElementSibling.classList.toggle('hidden')">
+          <span class="ch-tree-cat-icon">▾</span>
+          <span>📁 ${esc(cat.name)}</span>
+          <span style="font-size:9px;color:var(--m2);margin-left:auto">${children.length}</span>
+        </div>
+        <div class="ch-tree-children">${children.map(chItem).join('') || '<div style="font-size:10px;color:var(--m2);padding:4px 8px">Empty</div>'}</div>
+      </div>`);
+  }
+
+  // Orphan channels (no category)
+  const orphans = guild.channels
+    .filter(c => c.type !== 4 && !c.parentId)
+    .sort((a,b) => (a.position||0)-(b.position||0));
+  if (orphans.length) {
+    sections.push(`<div class="ch-tree-children" style="padding-left:0">${orphans.map(chItem).join('')}</div>`);
+  }
+
+  tree.innerHTML = sections.join('') || '<div style="font-size:11px;color:var(--m)">No channels found.</div>';
+  container.style.display = '';
+}
+
+function _renderNewChannelBotList() {
+  const el = document.getElementById('new-ch-bot-list');
+  if (!el || !REGISTRY.length) return;
+  el.innerHTML = REGISTRY.map(a => `
+    <label style="font-size:10px;display:flex;align-items:center;gap:4px;cursor:pointer;padding:3px 8px;border-radius:6px;background:var(--bg);box-shadow:var(--sh-sm)">
+      <input type="checkbox" data-agent-id="${esc(a.id)}" class="new-ch-bot-check">
+      ${esc(a.id.replace('-agent',''))}
+    </label>`).join('');
+}
+
+function _showCreateCategoryForm() {
+  document.getElementById('create-cat-form').style.display = '';
+  document.getElementById('create-ch-form').style.display = 'none';
+  document.getElementById('new-cat-name')?.focus();
+}
+
+function _showCreateChannelForm() {
+  document.getElementById('create-ch-form').style.display = '';
+  document.getElementById('create-cat-form').style.display = 'none';
+  document.getElementById('new-discord-ch-name')?.focus();
+}
+
+async function createDiscordCategory() {
+  const name = document.getElementById('new-cat-name')?.value.trim();
+  const statusEl = document.getElementById('create-cat-status');
+  const btn = document.getElementById('create-cat-btn');
+  if (!name) { showToast('Category name is required.', 'warn'); return; }
+  if (!_selectedGuildId) { showToast('Fetch from Discord first.', 'warn'); return; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Creating…'; }
+  if (statusEl) statusEl.textContent = '';
+  try {
+    const res = await fetch(apiUrl('/api/discord/channels/create'), {
+      method:'POST', headers:{..._authHeaders(),'Content-Type':'application/json'},
+      body: JSON.stringify({ guildId: _selectedGuildId, name, type: 4 })
+    });
+    const data = await res.json();
+    if (!res.ok) { if (statusEl) statusEl.textContent = 'Error: ' + (data.error || res.status); return; }
+    if (statusEl) statusEl.textContent = `✓ Created folder "${data.channel.name}"`;
+    document.getElementById('new-cat-name').value = '';
+    await _fetchDiscordGuilds();
+  } catch (e) {
+    if (statusEl) statusEl.textContent = 'Error: ' + e.message;
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Create folder'; }
+  }
+}
+
+function _prefillChannelForm(id, name) {
+  const keyEl = document.getElementById('reg-ch-key');
+  const idEl  = document.getElementById('reg-ch-id');
+  if (keyEl && !keyEl.value) keyEl.value = name.toLowerCase().replace(/[^a-z0-9-]/g, '-');
+  if (idEl) idEl.value = id;
+  // Scroll form into view
+  document.getElementById('reg-ch-key')?.scrollIntoView({ behavior:'smooth', block:'center' });
+}
+
+async function createDiscordChannel() {
+  const name = document.getElementById('new-discord-ch-name')?.value.trim();
+  const type = Number(document.getElementById('new-discord-ch-type')?.value || 0);
+  const parentId = document.getElementById('new-discord-ch-parent')?.value || undefined;
+  const isPrivate = document.getElementById('new-discord-ch-private')?.checked || false;
+  const statusEl = document.getElementById('create-discord-ch-status');
+  const btn = document.getElementById('create-discord-ch-btn');
+
+  if (!name) { showToast('Channel name is required.', 'warn'); return; }
+  if (!_selectedGuildId) { showToast('Fetch from Discord first to select a server.', 'warn'); return; }
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Creating…'; }
+  if (statusEl) statusEl.textContent = '';
+
+  try {
+    const res = await fetch(apiUrl('/api/discord/channels/create'), {
+      method:'POST', headers:{..._authHeaders(),'Content-Type':'application/json'},
+      body: JSON.stringify({
+        guildId: _selectedGuildId, name, type, private: isPrivate,
+        ...(parentId ? { parentId } : {})
+      })
+    });
+    const data = await res.json();
+    if (!res.ok) { if (statusEl) statusEl.textContent = 'Error: ' + (data.error || res.status); return; }
+    if (statusEl) statusEl.textContent = `✓ Created #${data.channel.name} (${data.channel.id}) — register it below.`;
+    // Auto-register bots selected in the bot list
+    const botChecks = document.querySelectorAll('.new-ch-bot-check:checked');
+    const channelKey = name.toLowerCase().replace(/[^a-z0-9-]/g, '-');
+    for (const cb of botChecks) {
+      await saveAgentChannel(cb.dataset.agentId, channelKey).catch(()=>{});
+    }
+    // Pre-fill the register form
+    _prefillChannelForm(data.channel.id, data.channel.name);
+    // Refresh live channels
+    await _fetchDiscordGuilds();
+    document.getElementById('create-ch-form').style.display = 'none';
+  } catch (e) {
+    if (statusEl) statusEl.textContent = 'Error: ' + e.message;
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Create in Discord'; }
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   CONTEXT WINDOW SETTINGS
+══════════════════════════════════════════════════════════════ */
+let _ctxSettings = { maxContextMessages: 20, contextCompression: false, compressionModel: 'flash' };
+
+async function _loadContextSettings() {
+  if (!API_BASE) return;
+  try {
+    const res = await fetch(apiUrl('/api/project/context-settings'), { headers: _authHeaders() });
+    if (!res.ok) return;
+    const data = await res.json();
+    _ctxSettings = data;
+    _syncContextSettingsUI();
+  } catch {}
+}
+
+function _syncContextSettingsUI() {
+  const slider = document.getElementById('ctx-max-messages');
+  const label  = document.getElementById('ctx-max-label');
+  const btn    = document.getElementById('ctx-compress-btn');
+  const model  = document.getElementById('ctx-compress-model');
+  if (slider) { slider.value = _ctxSettings.maxContextMessages ?? 20; }
+  if (label)  { label.textContent = _ctxSettings.maxContextMessages ?? 20; }
+  if (btn)    {
+    const on = !!_ctxSettings.contextCompression;
+    btn.textContent = on ? 'On' : 'Off';
+    btn.classList.toggle('active', on);
+    btn.classList.toggle('inactive', !on);
+  }
+  if (model)  { model.value = _ctxSettings.compressionModel ?? 'flash'; }
+}
+
+function toggleContextCompression() {
+  _ctxSettings.contextCompression = !_ctxSettings.contextCompression;
+  _syncContextSettingsUI();
+  saveContextSettings();
+}
+
+async function saveContextSettings() {
+  const slider = document.getElementById('ctx-max-messages');
+  const model  = document.getElementById('ctx-compress-model');
+  const statusEl = document.getElementById('ctx-save-status');
+
+  const maxContextMessages = Number(slider?.value || 20);
+  const compressionModel = model?.value || 'flash';
+  const contextCompression = !!_ctxSettings.contextCompression;
+
+  if (statusEl) statusEl.textContent = 'Saving…';
+  try {
+    const res = await fetch(apiUrl('/api/project/context-settings'), {
+      method:'POST', headers:{..._authHeaders(),'Content-Type':'application/json'},
+      body: JSON.stringify({ maxContextMessages, contextCompression, compressionModel })
+    });
+    if (statusEl) statusEl.textContent = res.ok ? '✓ Saved' : 'Error: ' + res.status;
+    if (res.ok) _ctxSettings = { maxContextMessages, contextCompression, compressionModel };
+    setTimeout(() => { if (statusEl) statusEl.textContent = ''; }, 2500);
+  } catch (e) {
+    if (statusEl) statusEl.textContent = 'Error: ' + e.message;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   REPOS PAGE
+══════════════════════════════════════════════════════════════ */
+let _repoSearchTimer = null;
+let _reposInited = false;
+
+const PINNED_REPOS = [
+  { fullName:'lucasmasunoacn/hachi-core',  label:'hachi-core',    desc:'Framework upstream — fork base for no-gem', icon:'⚙️',  url:'https://github.com/lucasmasunoacn/hachi-core' },
+  { fullName:'lucasmasunoacn/no-gem-dash', label:'no-gem-dash',   desc:'This dashboard (GitHub Pages SPA)',          icon:'📊',  url:'https://github.com/lucasmasunoacn/no-gem-dash' },
+  { fullName:'lucasmasunoacn/obsidian',    label:'obsidian',      desc:'Knowledge management wiki repo',             icon:'📚',  url:'https://github.com/lucasmasunoacn/obsidian' },
+  { fullName:'lucasmasunoacn/second-brain-1', label:'second-brain-1', desc:'Second brain knowledge base',           icon:'🧠',  url:'https://github.com/lucasmasunoacn/second-brain-1' },
+];
+
+function _renderPinnedRepos() {
+  const el = document.getElementById('pinned-repos');
+  if (!el) return;
+  el.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px">
+    ${PINNED_REPOS.map(r => `
+      <a href="${esc(r.url)}" target="_blank" rel="noopener" style="text-decoration:none">
+        <div style="background:var(--bg);box-shadow:var(--sh);border-radius:12px;padding:14px;cursor:pointer;transition:box-shadow .15s" onmouseover="this.style.boxShadow='var(--sh-lg)'" onmouseout="this.style.boxShadow='var(--sh)'">
+          <div style="font-size:18px;margin-bottom:6px">${r.icon}</div>
+          <div style="font-size:13px;font-weight:700;color:var(--acc);margin-bottom:3px">${esc(r.label)}</div>
+          <div style="font-size:10px;color:var(--m);line-height:1.4">${esc(r.desc)}</div>
+          <div style="font-size:9px;color:var(--m2);margin-top:6px;font-family:monospace">${esc(r.fullName)}</div>
+        </div>
+      </a>`).join('')}
+  </div>`;
+}
+
+function _initReposPage() {
+  _renderPinnedRepos();
+  if (!_reposInited) { _reposInited = true; _loadRepos(); }
+}
+
+function _debouncedRepoSearch() {
+  clearTimeout(_repoSearchTimer);
+  _repoSearchTimer = setTimeout(_loadRepos, 400);
+}
+
+async function _loadRepos() {
+  const q = document.getElementById('repo-search')?.value.trim() || '';
+  const listEl = document.getElementById('repo-list'); if (!listEl) return;
+  listEl.innerHTML = '<div style="font-size:11px;color:var(--m);padding:12px">Loading…</div>';
+
+  try {
+    const res = await fetch(apiUrl(`/api/github/repos${q ? '?q=' + encodeURIComponent(q) : ''}`), { headers: _authHeaders() });
+    if (res.status === 401) { _handleUnauthorized(); return; }
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      listEl.innerHTML = `<div style="font-size:11px;color:var(--error);padding:12px">Error: ${esc(err.error || res.status)}</div>`;
+      return;
+    }
+    const data = await res.json();
+    const repos = data.repos || [];
+    if (!repos.length) {
+      listEl.innerHTML = '<div style="font-size:11px;color:var(--m);padding:12px">No repositories found.</div>';
+      return;
+    }
+    listEl.innerHTML = repos.map(_repoRow).join('');
+  } catch (e) {
+    listEl.innerHTML = `<div style="font-size:11px;color:var(--error);padding:12px">Error: ${esc(e.message)}</div>`;
+  }
+}
+
+function _repoRow(repo) {
+  const age = relTime(repo.pushedAt || repo.updatedAt);
+  const lang = repo.language ? `<span style="font-size:9px;padding:1px 5px;border-radius:3px;background:var(--accent-bg);color:var(--acc)">${esc(repo.language)}</span>` : '';
+  const priv = repo.private
+    ? '<span style="font-size:9px;color:var(--m2);border:1px solid var(--div);padding:1px 5px;border-radius:3px">private</span>'
+    : '<span style="font-size:9px;color:#34D399;border:1px solid #34D39933;padding:1px 5px;border-radius:3px">public</span>';
+  const arch = repo.archived ? '<span style="font-size:9px;color:var(--m2)">[archived]</span>' : '';
+  return `<div class="src-row" style="gap:10px">
+    <div class="src-body" style="flex:1;min-width:0">
+      <div class="src-name" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+        <a href="${esc(repo.url)}" target="_blank" rel="noopener" style="color:var(--acc)">${esc(repo.fullName)}</a>
+        ${priv} ${arch} ${lang}
+      </div>
+      ${repo.description ? `<div class="src-meta" style="margin-top:2px">${esc(repo.description)}</div>` : ''}
+      <div class="src-meta" style="margin-top:3px">
+        ${repo.stars > 0 ? `⭐ ${repo.stars}  ` : ''}
+        ${repo.forks > 0 ? `🍴 ${repo.forks}  ` : ''}
+        <span style="color:var(--m)">${esc(repo.defaultBranch)}  ·  ${age}</span>
+      </div>
+    </div>
+    <button class="act-btn" onclick="_viewCollaborators('${esc(repo.fullName)}')" style="font-size:9px;padding:3px 8px;white-space:nowrap">👥 Collab</button>
+  </div>`;
+}
+
+async function _viewCollaborators(fullName) {
+  const [owner, repo] = fullName.split('/');
+  document.getElementById('detail-content').innerHTML = `<div class="p-title">Collaborators — ${esc(fullName)}</div><div style="padding:12px;color:var(--m);font-size:11px">Loading…</div>`;
+  document.getElementById('detail-overlay').classList.add('open');
+  try {
+    const res = await fetch(apiUrl(`/api/github/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/collaborators`), { headers: _authHeaders() });
+    const data = await res.json();
+    if (data.limited) {
+      document.getElementById('detail-content').innerHTML = `<div class="p-title">Collaborators — ${esc(fullName)}</div><div style="padding:12px;color:var(--m);font-size:11px">Collaborator access requires organization admin permissions on the token.</div>`;
+      return;
+    }
+    const collabs = data.collaborators || [];
+    document.getElementById('detail-content').innerHTML = `
+      <div class="p-title">Collaborators — ${esc(fullName)}</div>
+      <div style="margin-top:12px">
+        ${collabs.length ? collabs.map(u => `
+          <div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--div)">
+            <img src="${esc(u.avatarUrl)}" width="24" height="24" style="border-radius:50%">
+            <div style="flex:1">
+              <a href="${esc(u.url)}" target="_blank" rel="noopener" style="color:var(--acc);font-size:12px">${esc(u.login)}</a>
+            </div>
+            <span style="font-size:10px;color:var(--m)">${esc(u.role || 'write')}</span>
+          </div>`).join('') : '<div style="color:var(--m);font-size:11px">No collaborators found.</div>'}
+      </div>`;
+  } catch (e) {
+    document.getElementById('detail-content').innerHTML = `<div class="p-title">Error</div><div style="color:var(--error);font-size:11px;padding:12px">${esc(e.message)}</div>`;
+  }
+}
+
+async function createRepo() {
+  const name = document.getElementById('new-repo-name')?.value.trim();
+  const desc = document.getElementById('new-repo-desc')?.value.trim() || '';
+  const isPrivate = document.getElementById('new-repo-private')?.checked ?? true;
+  const autoInit = document.getElementById('new-repo-init')?.checked ?? true;
+  const statusEl = document.getElementById('create-repo-status');
+  const btn = document.getElementById('create-repo-btn');
+
+  if (!name) { showToast('Repository name is required.', 'warn'); return; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Creating…'; }
+  if (statusEl) statusEl.textContent = '';
+
+  try {
+    const res = await fetch(apiUrl('/api/github/repos'), {
+      method:'POST', headers:{..._authHeaders(),'Content-Type':'application/json'},
+      body: JSON.stringify({ name, description: desc, private: isPrivate, autoInit })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      if (statusEl) statusEl.textContent = 'Error: ' + (data.error || res.status);
+      return;
+    }
+    if (statusEl) statusEl.textContent = `✓ Created: ${data.repo.fullName}`;
+    document.getElementById('new-repo-name').value = '';
+    document.getElementById('new-repo-desc').value = '';
+    _loadRepos(); // refresh list
+  } catch (e) {
+    if (statusEl) statusEl.textContent = 'Error: ' + e.message;
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Create repository'; }
+  }
+}
 
 /* ═══════════════════════════════════════════════════════════
    INIT
